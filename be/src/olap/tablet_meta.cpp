@@ -67,7 +67,8 @@ OLAPStatus TabletMeta::create(int64_t table_id, int64_t partition_id,
     tablet_meta->reset(new TabletMeta(table_id, partition_id,
                                       tablet_id, schema_hash,
                                       shard_id, tablet_schema,
-                                      next_unique_id, col_ordinal_to_unique_id, tablet_uid));
+                                      next_unique_id, col_ordinal_to_unique_id, tablet_uid,
+                                      false));
     return OLAP_SUCCESS;
 }
 
@@ -78,7 +79,8 @@ OLAPStatus TabletMeta::create(const TCreateTabletReq& request, const TabletUid& 
     tablet_meta->reset(new TabletMeta(request.table_id, request.partition_id,
                                       request.tablet_id, request.tablet_schema.schema_hash,
                                       shard_id, request.tablet_schema,
-                                      next_unique_id, col_ordinal_to_unique_id, tablet_uid));
+                                      next_unique_id, col_ordinal_to_unique_id, tablet_uid,
+                                      request.is_memory));
     return OLAP_SUCCESS;
 }
 
@@ -89,7 +91,7 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id,
                        uint64_t shard_id, const TTabletSchema& tablet_schema,
                        uint32_t next_unique_id,
                        const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
-                       TabletUid tablet_uid) : _tablet_uid(0, 0),
+                       TabletUid tablet_uid, bool is_memory) : _tablet_uid(0, 0),
                        _preferred_rowset_type(ALPHA_ROWSET) {
     TabletMetaPB tablet_meta_pb;
     tablet_meta_pb.set_table_id(table_id);
@@ -100,6 +102,7 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id,
     tablet_meta_pb.set_creation_time(time(NULL));
     tablet_meta_pb.set_cumulative_layer_point(-1);
     tablet_meta_pb.set_tablet_state(PB_RUNNING);
+    tablet_meta_pb.set_is_memory(is_memory);
     *(tablet_meta_pb.mutable_tablet_uid()) = tablet_uid.to_proto();
     TabletSchemaPB* schema = tablet_meta_pb.mutable_schema();
     schema->set_num_short_key_columns(tablet_schema.short_key_column_count);
@@ -339,6 +342,7 @@ void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
     _creation_time = tablet_meta_pb.creation_time();
     _cumulative_layer_point = tablet_meta_pb.cumulative_layer_point();
     _tablet_uid = TabletUid(tablet_meta_pb.tablet_uid());
+    _is_memory = tablet_meta_pb.is_memory();
 
     // init _tablet_state
     switch (tablet_meta_pb.tablet_state()) {
@@ -405,7 +409,8 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
     tablet_meta_pb->set_creation_time(creation_time());
     tablet_meta_pb->set_cumulative_layer_point(cumulative_layer_point());
     *(tablet_meta_pb->mutable_tablet_uid()) = tablet_uid().to_proto();
-    switch (tablet_state()) {
+    tablet_meta_pb->set_is_memory(is_memory());
+     switch (tablet_state()) {
         case TABLET_NOTREADY:
             tablet_meta_pb->set_tablet_state(PB_NOTREADY);
             break;

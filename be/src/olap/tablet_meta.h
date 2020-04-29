@@ -116,7 +116,7 @@ public:
                uint64_t shard_id, const TTabletSchema& tablet_schema,
                uint32_t next_unique_id,
                const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
-               TabletUid tablet_uid);
+               TabletUid tablet_uid, bool is_memory);
 
     // Function create_from_file is used to be compatible with previous tablet_meta.
     // Previous tablet_meta is a physical file in tablet dir, which is not stored in rocksdb.
@@ -135,6 +135,7 @@ public:
     void to_meta_pb(TabletMetaPB* tablet_meta_pb);
     void to_json(std::string* json_string, json2pb::Pb2JsonOptions& options);
 
+    inline bool is_memory() const;
     inline TabletUid tablet_uid() const;
     inline int64_t table_id() const;
     inline int64_t partition_id() const;
@@ -211,6 +212,7 @@ private:
     int64_t _creation_time = 0;
     int64_t _cumulative_layer_point = 0;
     TabletUid _tablet_uid;
+    bool _is_memory = false;
 
     TabletState _tablet_state = TABLET_NOTREADY;
     TabletSchema _schema;
@@ -223,6 +225,10 @@ private:
 
     RWMutex _meta_lock;
 };
+
+inline bool TabletMeta::is_memory() const {
+    return _is_memory;
+}
 
 inline TabletUid TabletMeta::tablet_uid() const {
     return _tablet_uid;

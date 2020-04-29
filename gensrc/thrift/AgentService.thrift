@@ -72,6 +72,7 @@ struct TCreateTabletReq {
     // indicate whether this tablet is a compute storage split mode, we call it "eco mode"
     12: optional bool is_eco_mode
     13: optional TStorageFormat storage_format
+    14: optional bool is_memory = false
 }
 
 struct TDropTabletReq {
