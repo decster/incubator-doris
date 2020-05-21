@@ -203,6 +203,8 @@ import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
 import org.apache.doris.thrift.TTaskType;
+import org.apache.doris.thrift.TTabletType;
+
 import org.apache.doris.transaction.GlobalTransactionMgr;
 import org.apache.doris.transaction.PublishVersionDaemon;
 
@@ -3079,7 +3081,9 @@ public class Catalog {
                     bfColumns, olapTable.getBfFpp(),
                     tabletIdSet, olapTable.getCopiedIndexes(),
                     singlePartitionDesc.isInMemory(),
-                    olapTable.getStorageFormat());
+                    olapTable.getStorageFormat(),
+                    singlePartitionDesc.getTabletType()
+                    );
 
             // check again
             db.writeLock();
@@ -3326,6 +3330,14 @@ public class Catalog {
         boolean isInMemory = PropertyAnalyzer.analyzeBooleanProp(properties,
                 PropertyAnalyzer.PROPERTIES_INMEMORY, partitionInfo.getIsInMemory(partition.getId()));
 
+        // 4. tablet type
+        TTabletType tabletType = TTabletType.TABLET_TYPE_DISK;
+        try {
+            tabletType = PropertyAnalyzer.analyzeTabletType(properties);
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
+        }
+
         // check if has other undefined properties
         if (properties != null && !properties.isEmpty()) {
             MapJoiner mapJoiner = Joiner.on(", ").withKeyValueSeparator(" = ");
@@ -3352,6 +3364,14 @@ public class Catalog {
             partitionInfo.setIsInMemory(partition.getId(), isInMemory);
             LOG.debug("modify partition[{}-{}-{}] in memory to {}", db.getId(), olapTable.getId(), partitionName,
                     isInMemory);
+        }
+
+        // tablet type
+        // TODO: serialize to edit log
+        if (tabletType != partitionInfo.getTabletType(partition.getId())) {
+            partitionInfo.setTabletType(partition.getId(), tabletType);
+            LOG.debug("modify partition[{}-{}-{}] tablet type to {}", db.getId(), olapTable.getId(), partitionName,
+                    tabletType);
         }
 
         // log
@@ -3391,7 +3411,8 @@ public class Catalog {
                                                  Set<Long> tabletIdSet,
                                                  List<Index> indexes,
                                                  boolean isInMemory,
-                                                 TStorageFormat storageFormat) throws DdlException {
+                                                 TStorageFormat storageFormat,
+                                                 TTabletType tabletType) throws DdlException {
         // create base index first.
         Preconditions.checkArgument(baseIndexId != -1);
         MaterializedIndex baseIndex = new MaterializedIndex(baseIndexId, IndexState.NORMAL);
@@ -3455,7 +3476,8 @@ public class Catalog {
                             schema, bfColumns, bfFpp,
                             countDownLatch,
                             indexes,
-                            isInMemory);
+                            isInMemory,
+                            tabletType);
                     task.setStorageFormat(storageFormat);
                     batchTask.addTask(task);
                     // add to AgentTaskQueue for handling finish report.
@@ -3603,6 +3625,13 @@ public class Catalog {
         boolean isInMemory = PropertyAnalyzer.analyzeBooleanProp(properties, PropertyAnalyzer.PROPERTIES_INMEMORY, false);
         olapTable.setIsInMemory(isInMemory);
 
+        TTabletType tabletType = TTabletType.TABLET_TYPE_DISK;
+        try {
+            tabletType = PropertyAnalyzer.analyzeTabletType(properties);
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
+        }
+
         if (partitionInfo.getType() == PartitionType.UNPARTITIONED) {
             // if this is an unpartitioned table, we should analyze data property and replication num here.
             // if this is a partitioned table, there properties are already analyzed in RangePartitionDesc analyze phase.
@@ -3620,6 +3649,7 @@ public class Catalog {
             partitionInfo.setDataProperty(partitionId, dataProperty);
             partitionInfo.setReplicationNum(partitionId, replicationNum);
             partitionInfo.setIsInMemory(partitionId, isInMemory);
+            partitionInfo.setTabletType(partitionId, tabletType);
         }
 
         // check colocation properties
@@ -3726,7 +3756,7 @@ public class Catalog {
                         partitionInfo.getReplicationNum(partitionId),
                         versionInfo, bfColumns, bfFpp,
                         tabletIdSet, olapTable.getCopiedIndexes(),
-                        isInMemory, storageFormat);
+                        isInMemory, storageFormat, tabletType);
                 olapTable.addPartition(partition);
             } else if (partitionInfo.getType() == PartitionType.RANGE) {
                 try {
@@ -3755,7 +3785,8 @@ public class Catalog {
                             partitionInfo.getReplicationNum(entry.getValue()),
                             versionInfo, bfColumns, bfFpp,
                             tabletIdSet, olapTable.getCopiedIndexes(),
-                            isInMemory, storageFormat);
+                            isInMemory, storageFormat,
+                            rangePartitionInfo.getTabletType(entry.getValue()));
                     olapTable.addPartition(partition);
                 }
             } else {
@@ -6222,7 +6253,8 @@ public class Catalog {
                         tabletIdSet,
                         copiedTbl.getCopiedIndexes(),
                         copiedTbl.isInMemory(),
-                        copiedTbl.getStorageFormat());
+                        copiedTbl.getStorageFormat(),
+                        copiedTbl.getPartitionInfo().getTabletType(oldPartitionId));
                 newPartitions.add(newPartition);
             }
         } catch (DdlException e) {

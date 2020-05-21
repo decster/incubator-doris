@@ -46,6 +46,7 @@ import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
 import org.apache.doris.thrift.TTaskType;
+import org.apache.doris.thrift.TTabletType;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -177,6 +178,7 @@ public class RollupJobV2 extends AlterJobV2 {
                     continue;
                 }
                 TStorageMedium storageMedium = tbl.getPartitionInfo().getDataProperty(partitionId).getStorageMedium();
+                TTabletType tabletType = tbl.getPartitionInfo().getTabletType(partitionId);
                 MaterializedIndex rollupIndex = entry.getValue();
 
                 Map<Long, Long> tabletIdMap = this.partitionIdToBaseRollupTabletIdMap.get(partitionId);
@@ -196,7 +198,8 @@ public class RollupJobV2 extends AlterJobV2 {
                                 rollupKeysType, TStorageType.COLUMN, storageMedium,
                                 rollupSchema, tbl.getCopiedBfColumns(), tbl.getBfFpp(), countDownLatch,
                                 tbl.getCopiedIndexes(),
-                                tbl.isInMemory());
+                                tbl.isInMemory(),
+                                tabletType);
                         createReplicaTask.setBaseTablet(tabletIdMap.get(rollupTabletId), baseSchemaHash);
                         if (this.storageFormat != null) {
                             createReplicaTask.setStorageFormat(this.storageFormat);
